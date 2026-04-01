@@ -23,14 +23,16 @@ def run_cmd(cmd, step_name):
         return False
 
 def main():
+    # Threading validation
+    cpu_count = os.cpu_count() or 1
     parser = argparse.ArgumentParser(description="Upscale audio using Demucs, DeepFilterNet, AudioSR, and Pedalboard.")
     parser.add_argument("input", help="Path to the input audio file.")
     parser.add_argument("output", help="Path to the output upscaled audio file.")
     parser.add_argument(
         "-t", "--threads", 
         type=int, 
-        default=0, 
-        help="Number of threads to use (0 for default, cannot exceed system max)."
+        default=cpu_count, 
+        help=f"Number of threads to use (max: {cpu_count})."
     )
     parser.add_argument(
         "--keep-temp", 

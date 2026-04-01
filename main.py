@@ -20,15 +20,18 @@ def get_video_title(url, venv_python):
         return "downloaded_video"
 
 def main():
-    # Default paths provided by the user
-    default_to_upscale = "/home/mario/Work/personal_projects/music_upscaling/to_upscale"
-    default_post_upscaled = "/home/mario/Work/personal_projects/music_upscaling/post_upscaled"
-    default_final_video = "/home/mario/Work/personal_projects/music_upscaling/final_video"
+    # Default paths for processing
+    cwd = os.getcwd()
+    default_to_upscale = os.path.join(cwd, "to_upscale")
+    default_post_upscaled = os.path.join(cwd, "post_upscaled")
+    default_final_video = os.path.join(cwd, "final_video")
 
+    # Threading validation
+    cpu_count = os.cpu_count() or 1
     parser = argparse.ArgumentParser(description="Master script for YouTube download, upscaling, and comparison video generation.")
     parser.add_argument("url", help="The YouTube URL to process.")
     parser.add_argument("-f", "--format", default="mp3", help="The audio format to download (default: mp3).")
-    parser.add_argument("-t", "--threads", type=int, default=28, help="Number of threads for upscaling (default: 28).")
+    parser.add_argument("-t", "--threads", type=int, default=cpu_count, help=f"Number of threads for upscaling (max: {cpu_count}).")
     parser.add_argument("--to_upscale", default=default_to_upscale, help=f"Base directory for downloads (default: {default_to_upscale})")
     parser.add_argument("--post_upscaled", default=default_post_upscaled, help=f"Base directory for upscaled files (default: {default_post_upscaled})")
     parser.add_argument("--final_video_dir", default=default_final_video, help=f"Base directory for final comparison (default: {default_final_video})")
