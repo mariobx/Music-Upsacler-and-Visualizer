@@ -1,6 +1,6 @@
-# Music Upscaling & Visualization Pipeline
+# Music Upscaling & Visualization
 
-This project is an automated pipeline that downloads audio from YouTube, upscales it using advanced AI models (Demucs, DeepFilterNet, AudioSR), and generates side-by-side comparison visualizations using a custom build of Musializer.
+This project is an automated pipeline that downloads audio from YouTube, upscales it using Demucs, DeepFilterNet, and AudioSR. It generates side-by-side comparison visualizations using a custom build of Musializer.
 
 ## Prerequisites
 
