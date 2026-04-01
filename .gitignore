@@ -3,3 +3,9 @@ post_upscaled/
 to_upscale/
 musializer-file-paths/
 venv/
+dist/
+build/
+*.egg-info/
+src/*.egg-info/
+__pycache__/
+*.pyc

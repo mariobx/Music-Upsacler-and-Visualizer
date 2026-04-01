@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Music-Upsacler-and-Visualizer"
+version = "0.1.0"
+description = "An automated pipeline to download, upscale audio (Demucs, DeepFilterNet, AudioSR) and generate visualizations."
+readme = "README.md"
+authors = [{ name = "mariobx", email = "mario@example.com" }]
+license = "MIT"
+requires-python = ">=3.11, <3.12"
+dependencies = [
+    "yt-dlp",
+    "pedalboard",
+    "numpy<2.0",
+    "soundfile",
+    "torch==2.1.2",
+    "torchaudio==2.1.2",
+    "torchvision==0.16.2",
+    "GitPython",
+    "demucs",
+    "DeepFilterNet",
+    "audiosr"
+]
+
+[project.scripts]
+musicupscaler = "music_upscaler_and_visualizer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

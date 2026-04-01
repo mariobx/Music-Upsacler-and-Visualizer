@@ -3,16 +3,19 @@ import os
 import subprocess
 import sys
 import re
+from .yt_grab import download_audio
+from .musialize import run_musializer
+from .upscale import upscale_audio
 
 def sanitize_title(title):
     # Remove characters that are problematic for filesystems
     return re.sub(r'[^\w\s\-\(\)｜@]', '', title).strip().replace(' ', '_')
 
-def get_video_title(url, venv_python):
+def get_video_title(url):
     print(f"[*] Fetching video title from YouTube...")
     try:
         # Use yt-dlp to get the title
-        cmd = [os.path.join(os.path.dirname(venv_python), "yt-dlp"), "--get-filename", "-o", "%(title)s", url]
+        cmd = ["yt-dlp", "--get-filename", "-o", "%(title)s", url]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout.strip()
     except Exception as e:
@@ -35,18 +38,12 @@ def main():
     parser.add_argument("--to_upscale", default=default_to_upscale, help=f"Base directory for downloads (default: {default_to_upscale})")
     parser.add_argument("--post_upscaled", default=default_post_upscaled, help=f"Base directory for upscaled files (default: {default_post_upscaled})")
     parser.add_argument("--final_video_dir", default=default_final_video, help=f"Base directory for final comparison (default: {default_final_video})")
+    parser.add_argument("--musializer_dir", help="Path to the musializer-file-paths directory.")
     
     args = parser.parse_args()
 
-    # Paths to internal scripts and venv
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    venv_python = os.path.join(root_dir, "venv/bin/python3")
-    yt_grab_script = os.path.join(root_dir, "yt_grab.py")
-    musialize_script = os.path.join(root_dir, "musialize.py")
-    upscale_script = os.path.join(root_dir, "upscale.py")
-
     # 1. Get Title and Sanitize
-    raw_title = get_video_title(args.url, venv_python)
+    raw_title = get_video_title(args.url)
     safe_title = sanitize_title(raw_title)
     print(f"[*] Processing: {raw_title} (Safe name: {safe_title})")
 
@@ -59,19 +56,23 @@ def main():
 
     # 3. Download Audio
     print("[*] Step 2: Downloading audio...")
-    subprocess.run([venv_python, yt_grab_script, args.url, "-f", args.format, "-o", to_audio_dir], check=True)
+    if not download_audio(args.url, args.format, to_audio_dir):
+        print("Error: Audio download failed.")
+        sys.exit(1)
     
-    # Find the downloaded file (it might have spaces or weird characters if yt-dlp was literal)
+    # Find the downloaded file
     downloaded_files = [f for f in os.listdir(to_audio_dir) if f.endswith(args.format)]
     if not downloaded_files:
         print("Error: Could not find downloaded audio file.")
-        return
+        sys.exit(1)
     original_audio_path = os.path.join(to_audio_dir, downloaded_files[0])
 
     # 4. Create "Before" Visualizer
     print("[*] Step 3: Generating 'Before' visualizer...")
     before_video_path = os.path.join(to_visual_dir, f"{safe_title}.mp4")
-    subprocess.run([venv_python, musialize_script, original_audio_path, before_video_path], check=True)
+    if not run_musializer(original_audio_path, before_video_path, args.musializer_dir):
+        print("Error: 'Before' visualization failed.")
+        sys.exit(1)
 
     # 5. Setup "Post Upscaled" directory structure
     post_upscale_dir = os.path.join(args.post_upscaled, safe_title)
@@ -83,12 +84,16 @@ def main():
     # 6. Upscale Audio
     print("[*] Step 5: Upscaling audio (this will take a while)...")
     upscaled_audio_path = os.path.join(post_audio_dir, f"{safe_title}_upscaled.wav")
-    subprocess.run([venv_python, upscale_script, original_audio_path, upscaled_audio_path, "-t", str(args.threads)], check=True)
+    if not upscale_audio(original_audio_path, upscaled_audio_path, args.threads):
+        print("Error: Audio upscaling failed.")
+        sys.exit(1)
 
     # 7. Create "After" Visualizer
     print("[*] Step 6: Generating 'After' visualizer...")
     after_video_path = os.path.join(post_visual_dir, f"{safe_title}_upscaled.mp4")
-    subprocess.run([venv_python, musialize_script, upscaled_audio_path, after_video_path], check=True)
+    if not run_musializer(upscaled_audio_path, after_video_path, args.musializer_dir):
+        print("Error: 'After' visualization failed.")
+        sys.exit(1)
 
     # 8. Setup "Final Video" directory
     final_video_out_dir = os.path.join(args.final_video_dir, safe_title)
@@ -128,8 +133,7 @@ def main():
         f"Created by https://github.com/mariobx\n"
     )
     with open(description_path, "w") as desc_file:
-        description_file_content = description_content
-        desc_file.write(description_file_content)
+        desc_file.write(description_content)
 
     try:
         subprocess.run(ffmpeg_cmd, check=True)

@@ -1,0 +1,74 @@
+name: "Release: tag, build, publish"
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - pyproject.toml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  actions: write
+
+jobs:
+  tag-build-publish:
+    environment:
+      name: pypi
+      url: https://pypi.org/project/Music-Upsacler-and-Visualizer/
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Read current version
+        id: readver
+        run: |
+          VERSION=$(python -c "import tomllib, pathlib; d=tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8')); print(d['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Read previous version
+        id: prevver
+        run: |
+          if git show HEAD^:pyproject.toml >/dev/null 2>&1; then
+            PREV=$(git show HEAD^:pyproject.toml | python -c "import sys, tomllib; print(tomllib.loads(sys.stdin.read())['project']['version'])")
+            echo "prev=$PREV" >> "$GITHUB_OUTPUT"
+          else
+            echo "prev=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Skip if version didn’t change
+        if: ${{ steps.prevver.outputs.prev != '' && steps.prevver.outputs.prev == steps.readver.outputs.version }}
+        run: |
+          echo "Version unchanged (${{ steps.readver.outputs.version }}); nothing to do."
+          exit 0
+      - name: Create and push tag if missing
+        run: |
+          TAG="v${{ steps.readver.outputs.version }}"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists."
+          else
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Publish to PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

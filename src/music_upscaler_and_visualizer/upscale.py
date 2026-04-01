@@ -11,10 +11,17 @@ from pedalboard.io import AudioFile
 
 def run_cmd(cmd, step_name):
     print(f"[*] Running {step_name}...")
+    # Check if binary exists in PATH
     binary = cmd.split()[0]
-    if subprocess.run(f"command -v {binary}", shell=True, capture_output=True).returncode != 0:
-        print(f"[!] Warning: {binary} not found in PATH. Skipping {step_name}.")
-        return False
+    # Handle if binary is a path
+    if os.path.sep in binary:
+        if not os.path.exists(binary):
+            print(f"[!] Warning: {binary} not found. Skipping {step_name}.")
+            return False
+    else:
+        if subprocess.run(f"command -v {binary}", shell=True, capture_output=True).returncode != 0:
+            print(f"[!] Warning: {binary} not found in PATH. Skipping {step_name}.")
+            return False
     try:
         subprocess.run(cmd, check=True, shell=True)
         return True
@@ -22,41 +29,26 @@ def run_cmd(cmd, step_name):
         print(f"Error during {step_name}. Exit code: {e.returncode}")
         return False
 
-def main():
+def upscale_audio(input_file, output_file, threads=None, keep_temp=False):
     # Threading validation
     cpu_count = os.cpu_count() or 1
-    parser = argparse.ArgumentParser(description="Upscale audio using Demucs, DeepFilterNet, AudioSR, and Pedalboard.")
-    parser.add_argument("input", help="Path to the input audio file.")
-    parser.add_argument("output", help="Path to the output upscaled audio file.")
-    parser.add_argument(
-        "-t", "--threads", 
-        type=int, 
-        default=cpu_count, 
-        help=f"Number of threads to use (max: {cpu_count})."
-    )
-    parser.add_argument(
-        "--keep-temp", 
-        action="store_true", 
-        help="Do not delete the temporary upscale_temp directory."
-    )
-    args = parser.parse_args()
-
-    # Threading validation
-    cpu_count = os.cpu_count() or 1
-    if args.threads > cpu_count:
-        print(f"[!] Warning: Requested {args.threads} threads but only {cpu_count} available. Capping to {cpu_count}.")
-        args.threads = cpu_count
+    if threads is None:
+        threads = cpu_count
     
-    if args.threads > 0:
-        print(f"[*] Setting thread limit to {args.threads}")
-        torch.set_num_threads(args.threads)
+    if threads > cpu_count:
+        print(f"[!] Warning: Requested {threads} threads but only {cpu_count} available. Capping to {cpu_count}.")
+        threads = cpu_count
+    
+    if threads > 0:
+        print(f"[*] Setting thread limit to {threads}")
+        torch.set_num_threads(threads)
 
-    input_file = os.path.abspath(args.input)
-    output_file = os.path.abspath(args.output)
+    input_file = os.path.abspath(input_file)
+    output_file = os.path.abspath(output_file)
 
     if not os.path.exists(input_file):
         print(f"Error: Input file does not exist: {input_file}")
-        sys.exit(1)
+        return False
 
     out_dir = os.path.dirname(output_file)
     if out_dir and not os.path.exists(out_dir):
@@ -68,14 +60,13 @@ def main():
 
     base_name = os.path.splitext(os.path.basename(input_file))[0]
 
-    # Path to venv binaries
-    venv_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "venv", "bin")
-    demucs_cmd = os.path.join(venv_bin, "demucs")
-    deepfilter_cmd = os.path.join(venv_bin, "deepFilter")
-    audiosr_cmd = os.path.join(venv_bin, "audiosr")
+    # Use CLI tools directly (they should be in PATH when installed)
+    demucs_cmd = "demucs"
+    deepfilter_cmd = "deepFilter"
+    audiosr_cmd = "audiosr"
 
     # 1. Demucs separation
-    jobs_flag = f"-j {args.threads}" if args.threads > 0 else ""
+    jobs_flag = f"-j {threads}" if threads > 0 else ""
     run_cmd(f"{demucs_cmd} {jobs_flag} -n htdemucs -o \"{work_dir}\" \"{input_file}\"", "Demucs (Separation)")
 
     # Demucs puts files in work_dir/htdemucs/base_name/
@@ -84,6 +75,10 @@ def main():
     drums_wav = os.path.join(demucs_out, "drums.wav")
     bass_wav = os.path.join(demucs_out, "bass.wav")
     other_wav = os.path.join(demucs_out, "other.wav")
+
+    if not os.path.exists(vocals_wav):
+        print(f"Error: Demucs output not found at {vocals_wav}")
+        return False
 
     # 2. DeepFilterNet denoising on vocals
     run_cmd(f"{deepfilter_cmd} \"{vocals_wav}\" -o \"{demucs_out}\"", "DeepFilterNet (Vocals Denoising)")
@@ -140,7 +135,7 @@ def main():
 
     if mix is None:
         print("Error: No stems processed.")
-        sys.exit(1)
+        return False
 
     # Convert to Stereo if Mono
     if len(mix.shape) == 1:
@@ -181,11 +176,31 @@ def main():
                 effected = board(chunk, f.samplerate, reset=False)
                 o.write(effected)
 
-    if not args.keep_temp:
+    if not keep_temp:
         print(f"[*] Cleaning up temporary files in {work_dir}...")
         shutil.rmtree(work_dir)
 
     print(f"[*] Upscaling complete! Output saved to: {output_file}")
+    return True
+
+def main():
+    cpu_count = os.cpu_count() or 1
+    parser = argparse.ArgumentParser(description="Upscale audio using Demucs, DeepFilterNet, AudioSR, and Pedalboard.")
+    parser.add_argument("input", help="Path to the input audio file.")
+    parser.add_argument("output", help="Path to the output upscaled audio file.")
+    parser.add_argument(
+        "-t", "--threads", 
+        type=int, 
+        default=cpu_count, 
+        help=f"Number of threads to use (max: {cpu_count})."
+    )
+    parser.add_argument(
+        "--keep-temp", 
+        action="store_true", 
+        help="Do not delete the temporary upscale_temp directory."
+    )
+    args = parser.parse_args()
+    upscale_audio(args.input, args.output, args.threads, args.keep_temp)
 
 if __name__ == "__main__":
     main()
